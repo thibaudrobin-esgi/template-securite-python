@@ -9,7 +9,7 @@ class Capture:
 
     def capture_traffic(self) -> None:
         """
-        Capture network trafic from an interface
+        Capture network traffic from an interface
         """
         interface = self.interface
         logger.info(f"Capture traffic from interface {interface}")
@@ -43,7 +43,7 @@ class Capture:
         logger.debug(f"All protocols: {all_protocols}")
         logger.debug(f"Sorted protocols: {sort}")
 
-        self.summary = self.gen_summary()
+        self.summary = self._gen_summary()
 
     def get_summary(self) -> str:
         """
@@ -52,7 +52,7 @@ class Capture:
         """
         return self.summary
 
-    def gen_summary(self) -> str:
+    def _gen_summary(self) -> str:
         """
         Generate summary
         """

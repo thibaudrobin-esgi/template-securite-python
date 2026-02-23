@@ -1,6 +1,6 @@
-from src.tp1.utils.capture import Capture
-from src.tp1.utils.config import logger
-from src.tp1.utils.report import Report
+from tp1.utils.capture import Capture
+from tp1.utils.config import logger
+from tp1.utils.report import Report
 
 
 def main():
