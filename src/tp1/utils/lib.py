@@ -1,17 +1,18 @@
-def hello_world() -> str:
-    """
-    Hello world function
+from scapy.all import get_if_list
 
-    :return: "hello world"
-    """
-    return "hello world"
+from tp1.utils.config import logger
 
 
 def choose_interface() -> str:
-    """
-    Return network interface and input user choice
 
-    :return: network interface
-    """
-    interface = ""
+    interfaces = get_if_list()
+
+    print("interfaces dispo")
+    for i in range(len(interfaces)):
+        print(i, "->", interfaces[i])
+
+    num = int(input("choisis une interface"))
+    interface = interfaces[num]
+
+    logger.info(f"interface choisie : {interface}")
     return interface
