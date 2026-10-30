@@ -1,60 +1,107 @@
-from src.tp1.utils.lib import choose_interface
+from scapy.all import ARP, DNS, ICMP, IP, TCP, UDP, Ether, IPv6, Raw, rdpcap, sniff
+
 from tp1.utils.config import logger
+from tp1.utils.lib import choose_interface
+
+HTTP_METHODS = (
+    b"GET ",
+    b"POST ",
+    b"PUT ",
+    b"DELETE ",
+    b"HEAD ",
+    b"OPTIONS ",
+    b"PATCH ",
+    b"CONNECT ",
+    b"TRACE ",
+)
+
+# nom affiche -> couche scapy
+LAYERS = {
+    "Ethernet": Ether,
+    "ARP": ARP,
+    "IP": IP,
+    "IPv6": IPv6,
+    "TCP": TCP,
+    "UDP": UDP,
+    "ICMP": ICMP,
+    "DNS": DNS,
+}
+
+
+def tcp_payload(packet) -> bytes:
+    """
+    Return the TCP payload of a packet (empty if none)
+    """
+    if TCP not in packet or Raw not in packet:
+        return b""
+    return bytes(packet[Raw].load)
+
+
+def is_http_request(packet) -> bool:
+    return tcp_payload(packet).startswith(HTTP_METHODS)
+
+
+def is_http(packet) -> bool:
+    """
+    HTTP is recognised by its content, not by its port
+    """
+    payload = tcp_payload(packet)
+    return payload.startswith(HTTP_METHODS) or payload.startswith(b"HTTP/")
+
+
+def get_protocols(packet) -> list[str]:
+    """
+    Return every known protocol found in a packet (a HTTP packet is also TCP, IP and Ethernet)
+    """
+    protocols = [nom for nom, layer in LAYERS.items() if layer in packet]
+    if is_http(packet):
+        protocols.append("HTTP")
+    return protocols
 
 
 class Capture:
-    def __init__(self) -> None:
-        self.interface = choose_interface()
+    def __init__(self, pcap: str = "", interface: str | None = None) -> None:
+        self.pcap = pcap
+        # l'interface n'est demandee que pour une capture live sans --iface
+        self.interface = interface if interface is not None or pcap else choose_interface()
         self.summary = ""
+        self.packets = []
+        self.protocols = {}
 
-    def capture_traffic(self) -> None:
+    def capture_traffic(self, count: int = 200, timeout: int = 30) -> None:
         """
-        Capture network traffic from an interface
+        Read the pcap file, or capture network traffic from an interface
         """
-        interface = self.interface
-        logger.info(f"Capture traffic from interface {interface}")
-
-    def sort_network_protocols(self) -> str:
-        """
-        Sort and return all captured network protocols
-        """
-        return ""
+        if self.pcap:
+            logger.info(f"Lecture du fichier {self.pcap}")
+            self.packets = list(rdpcap(self.pcap))
+        elif self.interface:
+            logger.info(f"Capture sur l'interface {self.interface}")
+            self.packets = list(sniff(iface=self.interface, count=count, timeout=timeout))
+        else:
+            logger.warning("Ni fichier ni interface, capture annulee")
+            self.packets = []
+        logger.info(f"{len(self.packets)} paquets lus")
 
     def get_all_protocols(self) -> str:
         """
-        Return all protocols captured with total packets number
+        Count packets per protocol, sorted by volume
         """
-        return ""
+        compteur = {}
+        for packet in self.packets:
+            for nom in get_protocols(packet):
+                compteur[nom] = compteur.get(nom, 0) + 1
+        self.protocols = dict(sorted(compteur.items(), key=lambda p: p[1], reverse=True))
 
-    def analyse(self, protocols: str) -> None:
-        """
-        Analyse all captured data and return statement
-        Si un tra c est illégitime (exemple : Injection SQL, ARP
-        Spoo ng, etc)
-        a Noter la tentative d'attaque.
-        b Relever le protocole ainsi que l'adresse réseau/physique
-        de l'attaquant.
-        c (FACULTATIF) Opérer le blocage de la machine
-        attaquante.
-        Sinon a cher que tout va bien
-        """
-        all_protocols = self.get_all_protocols()
-        sort = self.sort_network_protocols()
-        logger.debug(f"All protocols: {all_protocols}")
-        logger.debug(f"Sorted protocols: {sort}")
+        lignes = [f"{nom}: {nb}" for nom, nb in self.protocols.items()]
+        lignes.append(f"Total: {len(self.packets)}")
+        return "\n".join(lignes)
 
-        self.summary = self._gen_summary()
+    def sort_network_protocols(self) -> str:
+        """
+        Return the protocols names, most used first
+        """
+        return ", ".join(self.protocols)
 
     def get_summary(self) -> str:
-        """
-        Return summary
-        :return:
-        """
         return self.summary
-
-    def _gen_summary(self) -> str:
-        """
-        Generate summary
-        """
-        summary = ""
-        return summary

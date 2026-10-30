@@ -1,73 +1,122 @@
 from unittest.mock import patch
-from src.tp1.utils.capture import Capture
+
+from scapy.all import ARP, DNS, DNSQR, ICMP, IP, TCP, UDP, Ether, Raw, wrpcap
+
+from tp1.utils.capture import Capture, get_protocols, is_http, is_http_request
 
 
-def test_capture_init():
-    # When
-    capture = Capture()
+def test_capture_init_with_pcap_does_not_ask_interface():
+    # Given
+    with patch("tp1.utils.capture.choose_interface") as choose:
+        # When
+        capture = Capture(pcap="trace.pcap")
 
     # Then
-    assert capture.interface == ""
+    choose.assert_not_called()
+    assert capture.pcap == "trace.pcap"
     assert capture.summary == ""
 
 
-def test_given_capture_when_capture_traffic_then_interface_is_set():
+def test_capture_init_without_source_asks_interface():
     # Given
-    capture = Capture()
+    with patch("tp1.utils.capture.choose_interface", return_value="eth0"):
+        # When
+        capture = Capture()
+
+    # Then
+    assert capture.interface == "eth0"
+
+
+def test_capture_traffic_reads_pcap(tmp_path):
+    # Given
+    fichier = tmp_path / "trace.pcap"
+    wrpcap(str(fichier), [Ether() / IP() / TCP(), Ether() / ARP()])
+    capture = Capture(pcap=str(fichier))
 
     # When
     capture.capture_traffic()
 
     # Then
-    # This is a minimal test since the method doesn't do much yet
-    assert capture.interface == ""
+    assert len(capture.packets) == 2
 
 
-def test_sort_network_protocols():
+def test_capture_traffic_live_uses_sniff():
     # Given
-    capture = Capture()
+    capture = Capture(interface="eth0")
 
     # When
-    result = capture.sort_network_protocols()
+    with patch("tp1.utils.capture.sniff", return_value=[Ether()]) as sniff:
+        capture.capture_traffic(count=5, timeout=1)
 
     # Then
-    assert result == ""  # Method currently returns None
+    sniff.assert_called_once_with(iface="eth0", count=5, timeout=1)
+    assert len(capture.packets) == 1
 
 
-def test_get_all_protocols():
+def test_capture_traffic_without_source():
     # Given
-    capture = Capture()
+    capture = Capture(interface="")
+
+    # When
+    capture.capture_traffic()
+
+    # Then
+    assert capture.packets == []
+
+
+def test_get_protocols_counts_every_layer():
+    # Given
+    requete = Ether() / IP() / TCP(dport=80) / Raw(b"GET / HTTP/1.1\r\n\r\n")
+
+    # When
+    result = get_protocols(requete)
+
+    # Then
+    assert result == ["Ethernet", "IP", "TCP", "HTTP"]
+
+
+def test_get_protocols_dns_and_icmp():
+    dns = Ether() / IP() / UDP() / DNS(qd=DNSQR(qname="a.test"))
+    assert get_protocols(dns) == ["Ethernet", "IP", "UDP", "DNS"]
+    assert get_protocols(Ether() / IP() / ICMP()) == ["Ethernet", "IP", "ICMP"]
+
+
+def test_is_http():
+    assert is_http_request(Ether() / IP() / TCP() / Raw(b"POST /login HTTP/1.1\r\n"))
+    assert is_http(Ether() / IP() / TCP() / Raw(b"HTTP/1.1 200 OK\r\n"))
+    assert not is_http_request(Ether() / IP() / TCP() / Raw(b"HTTP/1.1 200 OK\r\n"))
+    assert not is_http(Ether() / IP() / TCP(dport=80))
+
+
+def test_get_all_protocols_sorted():
+    # Given
+    capture = Capture(interface="")
+    capture.packets = [Ether() / IP() / TCP(), Ether() / IP() / TCP(), Ether() / ARP()]
 
     # When
     result = capture.get_all_protocols()
 
     # Then
-    assert result == ""  # Method currently returns None
+    assert capture.protocols == {"Ethernet": 3, "IP": 2, "TCP": 2, "ARP": 1}
+    assert list(capture.protocols)[0] == "Ethernet"
+    assert result.endswith("Total: 3")
 
 
-def test_analyse():
+def test_sort_network_protocols():
     # Given
-    capture = Capture()
+    capture = Capture(interface="")
+    capture.protocols = {"TCP": 5, "UDP": 2, "ARP": 1}
 
     # When
-    with (
-        patch.object(capture, "get_all_protocols") as mock_get_protocols,
-        patch.object(capture, "sort_network_protocols") as mock_sort,
-        patch.object(capture, "_gen_summary") as mock_gen_summary,
-    ):
-        mock_gen_summary.return_value = "Test summary"
-        capture.analyse("tcp")
+    result = capture.sort_network_protocols()
 
     # Then
-    mock_get_protocols.assert_called_once()
-    mock_sort.assert_called_once()
-    mock_gen_summary.assert_called_once()
-    assert capture.summary == "Test summary"
+    assert result == "TCP, UDP, ARP"
 
 
 def test_get_summary():
     # Given
-    capture = Capture()
+    capture = Capture(interface="")
     capture.summary = "Test summary"
 
     # When
@@ -75,14 +124,3 @@ def test_get_summary():
 
     # Then
     assert result == "Test summary"
-
-
-def test_gen_summary():
-    # Given
-    capture = Capture()
-
-    # When
-    result = capture._gen_summary()
-
-    # Then
-    assert result == ""  # Method currently returns empty string
